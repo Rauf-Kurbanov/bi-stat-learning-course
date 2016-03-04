@@ -1,5 +1,5 @@
 ---
-title: "Home assigntment #1"
+title: "Linear models and cross-validation"
 output: html_document
 ---
 
@@ -7,26 +7,20 @@ Loading data
 
 ```{r}
 df <- read.csv("/home/rauf/Programs/semester_2/stat-learn/ha_1/Advertising.csv")
-set <- df$X
+ind <- df$X
 df <- df[, -1]  
 head(df)
-
-training.set <- sample(set, size = length(set)*0.7)
-test.set <- set[-training.set]
-df.train <- df[training.set,]
-df.test <- df[test.set,]
-
 ```
 
 Visualisation for better intuition
 ```{r, message=F, warning=F}
 library(PerformanceAnalytics)
-chart.Correlation(df.train)
+chart.Correlation(df)
 ```
 
 Is there a relationship between advertising sales and budget?
 ```{r}
-lm.lazy.fit = lm(Sales~., data=df.train)
+lm.lazy.fit = lm(Sales~., data=df)
 summary(lm.lazy.fit)
 ```
 F-statistic in Table is very low, indicating
@@ -57,7 +51,7 @@ The additive assumption may be unrealistic for data set. Trend is in a residual 
 
 Lets check by adding interaction term.
 ```{r}
-lm.interacion.fit = lm(Sales~TV*Radio + Newspaper, data=df.train)
+lm.interacion.fit = lm(Sales~TV*Radio + Newspaper, data=df)
 summary(lm.interacion.fit)
 ```
 A small p-value associated with the interaction term indicates the presence of such
@@ -66,23 +60,44 @@ relationships.
 
 We also observe large p-valuse associated with the Newspaper term. Lets try to get rid of it
 ```{r}
-lm.shrinked.fit = lm(Sales~TV*Radio, data=df.train)
+lm.shrinked.fit = lm(Sales~TV*Radio, data=df)
 summary(lm.shrinked.fit)
 ```
 
-Now lets compare predictions by different models on test set
-```{r, message=F}
-library(rminer)
-lm.lazy.predict <- predict(lm.lazy.fit, df.test)
-mmetric(y = df.test$Sales, x = lm.lazy.predict, metric = 'R2')
+Simple cross-validation function
+```{r}
+cv.lm <- function(df, formula, nchuncks) {
+    df.size <- dim(df)[1]
+    ind.perm <- sample(ind, df.size, replace = F)
+    chunk.size <- df.size / (nchuncks + 1)
+    splitted <- split(ind.perm, ceiling(ind/chunk.size))
+    test.set <- splitted[1][[1]]
+    train.chunks <- splitted[-1]
+
+    err.on.chunk <- function(chunk) {
+        chunk <- chunk[[1]]
+        model <- lm(formula, data=df[chunk, ])
+        pred <- predict(model, df[test.set, ])
+        y <- df$Sales[test.set]
+        sum((y - pred) ^ 2) / length(y)
+    }
+
+    errors <- numeric(nchuncks)
+    for (i in 1:nchuncks) {
+        errors[i] <- err.on.chunk(train.chunks[i])
+    }
+    print(formula)
+    cat("Error mean = ", mean(errors))
+    cat("\tError sd = ", sd(errors))
+    cat("\n")
+}
 ```
 
+Now let's try it out
 ```{r}
-lm.interacion.predict <- predict(lm.interacion.fit, df.test)
-mmetric(y = df.test$Sales, x = lm.interacion.predict, metric = 'R2')
+nchunks <- 10
+cv.lm(df, formula(Sales ~ ., data = df), nchunks)
+cv.lm(df, formula(Sales~TV + Radio, data = df), nchunks)
+cv.lm(df, formula(Sales~TV*Radio, data = df), nchunks)
 ```
 
-```{r}
-lm.shrinked.predict <- predict(lm.shrinked.fit, df.test)
-mmetric(y = df.test$Sales, x = lm.shrinked.predict, metric = 'R2')
-```
